@@ -1,0 +1,154 @@
+/***********************************************************************************************************************
+ *
+ *  This is a Hubitat device driver which will connect to the Tigo Energy API and retrieve data.
+ *
+ ***********************************************************************************************************************/
+private version() { return "1.0.0" }
+
+metadata {
+    definition(
+        name: "TigoEnergy Monitoring Driver V1",
+        namespace: "marcaronson.TigoEnergy",
+        author: "Marc Aronson, based on work done by Joseph Kregloh",
+        description: "Driver to query the TigoEnergy API endpoint and return data related to solar production and consumption for a given site."
+    ) {
+      capability "EnergyMeter"
+      capability "Refresh"
+
+      command "getEnergy"
+      command "clearData"
+        
+      attribute "lastUpdate", "string"
+      attribute "lastQuery", "string"
+
+    }
+
+    preferences {
+	  section("Configure TigoEnergy API connection parameters") {
+          input("site_id", "number", title: "Site Id", description: "Site Id to monitor.", required: true)
+          input("api_key", "text", title: "API Bearer Token", description: "Bearer token for given site id. For more information see https://support.tigoenergy.com/hc/en-us/articles/200863027-How-To-use-the-Tigo-Energy-API.", required: true)
+          input("url", "text", title: "Tigo Energy Monitor API URL", description: "Endpoint URL for TigoEnergy Monitoring API.", required: true, defaultValue: "https://api2.tigoenergy.com/api/v3")
+
+          input("energy_refresh_interval", "enum", title: "How often to refresh the energy data", defaultValue: 255, options: [
+            255:"Do NOT update",
+            10:"10 Minutes",
+            15:"15 Minutes",
+            30:"30 Minutes",
+            45:"45 Minutes",
+            60:"60 Minutes"
+          ], required: false)
+          input(name: "debug", type: "bool", title: "Enable debug logging", defaultValue: false)
+        }
+    }
+}
+	
+
+
+def installed() {
+    log.info "TigoEnergy Monitoring has been installed."
+    
+    clearData()
+
+    state.version = version()
+}
+
+def uninstalled() {
+	if (debug) log.info "TigoEnergy Monitoring has been uninstalled."
+
+    unschedule(refresh)
+    unschedule(queryEnergyEndpoint)
+}
+
+def refresh() {
+
+  if (debug) log.debug "TigoEnergy API is being refreshed."
+
+  queryEnergyEndpoint()
+}
+
+def updated() {
+
+  if (debug) {
+      log.debug "Settings updated."
+  }
+
+  unschedule(refresh)
+  unschedule(queryEnergyEndpoint)
+
+  if( settings.energy_refresh_interval != "255") schedule("0 */${settings.energy_refresh_interval} * ? * * *", queryEnergyEndpoint)
+
+state.version = version()
+}
+
+def getEnergy() {
+  queryEnergyEndpoint()
+}
+
+
+def clearData()
+{
+  if (debug) log.debug "Deleting all metrics."
+
+    sendEvent(name: "energy", value: 0.5, unit: "kWh" )
+    state.lastUpdate = "Not updated yet"
+    state.lastQuery = "Not yet queried"
+
+
+}
+
+def queryEnergyEndpoint() {
+    
+    if (debug) { log.debug "Gathering energy metrics." }
+
+    def p_uri = "${url}/data/summary?system_id=${site_id}"
+    def p_headers = [ "Authorization": "Bearer ${api_key}" ]
+    
+  try { 
+    def queryDateTime = new Date()
+    if (debug) log.debug "In try, executing httpget at $queryDateTime"
+    httpGet( 
+        uri: p_uri,
+        headers: p_headers,
+        timeout: 60
+    ) { r-> 
+        def summary = r.data.summary
+        if (debug) {
+            log.debug("Made it")
+            log.debug "Status: ${r.getStatus()}"
+            log.debug "Headers: ${r.getAllHeaders()}"
+            log.debug "Content Type: ${r.getContentType()}"
+            log.debug "Response: ${r.data}"
+            log.debug "summary: ${summary}"
+        }
+        def kwh = summary.daily_energy_dc.toFloat() / 1000
+        if (debug) {log.debug("daily_energy_dc = ${summary.daily_energy_dc}, kwh = $kwh") }
+        sendEvent([ name: "energy", value: kwh ])
+        if (debug) {log.debug "production event sent"}
+        state.lastUpdate = summary.updated_on
+        state.lastQuery = "${queryDateTime}"
+    }
+  } catch (Exception e) {
+    log.error "Exception"
+
+    if(e.getStatusCode()) {
+      switch(e.getStatusCode()) {
+          case 401:
+              log.error "401 - Not authorized"
+              break
+          case 403:
+              log.error "403 - Forbidden"
+              break
+          case 429:
+              log.error "429 - Too many requests"
+              break
+          default:
+              log.error "Unkown Error"
+              log.error "httpGet status code: e.getStatusCode ${e.getStatusCode()}"
+              log.error "httpGet message: e.message : ${e.message}"
+              log.error "httpGet full stack: e : ${e}"
+              break
+      }
+    }
+  }
+
+}
