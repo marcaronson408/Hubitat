@@ -19,8 +19,10 @@ metadata {
       command "clearData"
         
       attribute "lastUpdate", "string"
+      attribute "lastUpdateTime", "string"
       attribute "lastQuery", "string"
-
+      attribute "power", "number"
+      attribute "line1", "string"
     }
 
     preferences {
@@ -88,11 +90,14 @@ def getEnergy() {
 def clearData()
 {
   if (debug)  log.debug "Deleting all metrics." 
-
+    
+  // state.remove("line2")
   delayBetween([
     sendEvent(name: "energy", value: 0.00, unit: "kWh" ),
     sendEvent(name: "lastQuery", value: "Not queried yet."),
-    sendEvent(name: "lastUpdate", value: "Not updated yet.")
+    sendEvent(name: "lastUpdate", value: "Not updated yet."),
+    sendEvent(name: "power", value: 0.00 ),
+    sendEvent(name: "line1", value: "Not updated yet.")
   ])
 
 
@@ -122,12 +127,18 @@ def queryEnergyEndpoint() {
             log.debug "Response: ${r.data}"
             log.debug "summary: ${summary}"
         }
-        def kwh = summary.daily_energy_dc.toFloat() / 1000
-        if (debug) {log.debug("daily_energy_dc = ${summary.daily_energy_dc}, kwh = $kwh") }
+        def kwh = summary.daily_energy_dc.toFloat() / 10
+        kwh = Math.round(kwh) / 100
+        def updated_time = "${summary.updated_on}"
+        updated_time = updated_time.substring(11,16)
+        if (debug) {log.debug("daily_energy_dc = ${summary.daily_energy_dc}, kwh = $kwh, updated_time=${updated_time}" )}
         delayBetween([
             sendEvent(name: "energy", value: kwh, unit: "kWh" ),
             sendEvent(name: "lastQuery", value: "${queryDateTime}"),
-            sendEvent(name: "lastUpdate", value: "${summary.updated_on}")
+            sendEvent(name: "lastUpdate", value: "${summary.updated_on}"),
+            sendEvent(name: "lastUpdateTime", value: "${updated_time}"),
+            sendEvent(name: "power", value: "${summary.last_power_dc}"),
+            sendEvent(name: "line1", value: "${kwh} kwh\n@ ${updated_time}")
         ])
 
         if (debug) {log.debug "Events sent"}
