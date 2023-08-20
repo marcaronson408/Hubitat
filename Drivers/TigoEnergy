@@ -89,12 +89,10 @@ def clearData()
 {
   if (debug)  log.debug "Deleting all metrics." 
 
-  state.lastUpdate = "Not updated yet"
-  state.lastQuery = "Not yet queried"
-
   delayBetween([
-    sendEvent(name: "energy", value: 0.5, unit: "kWh" ),
-    sendEvent(name: "lastQuery", value "Not yet queried...")
+    sendEvent(name: "energy", value: 0.00, unit: "kWh" ),
+    sendEvent(name: "lastQuery", value: "Not queried yet."),
+    sendEvent(name: "lastUpdate", value: "Not updated yet.")
   ])
 
 
@@ -126,10 +124,13 @@ def queryEnergyEndpoint() {
         }
         def kwh = summary.daily_energy_dc.toFloat() / 1000
         if (debug) {log.debug("daily_energy_dc = ${summary.daily_energy_dc}, kwh = $kwh") }
-        sendEvent([ name: "energy", value: kwh ])
-        if (debug) {log.debug "production event sent"}
-        state.lastUpdate = summary.updated_on
-        state.lastQuery = "${queryDateTime}"
+        delayBetween([
+            sendEvent(name: "energy", value: kwh, unit: "kWh" ),
+            sendEvent(name: "lastQuery", value: "${queryDateTime}"),
+            sendEvent(name: "lastUpdate", value: "${summary.updated_on}")
+        ])
+
+        if (debug) {log.debug "Events sent"}
     }
   } catch (Exception e) {
     log.error "Exception"
