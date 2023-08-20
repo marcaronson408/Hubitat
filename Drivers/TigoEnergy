@@ -3,7 +3,7 @@
  *  This is a Hubitat device driver which will connect to the Tigo Energy API and retrieve data.
  *
  ***********************************************************************************************************************/
-private version() { return "1.0.0" }
+private version() { return "1.0.1" }
 
 metadata {
     definition(
@@ -87,11 +87,15 @@ def getEnergy() {
 
 def clearData()
 {
-  if (debug) log.debug "Deleting all metrics."
+  if (debug)  log.debug "Deleting all metrics." 
 
-    sendEvent(name: "energy", value: 0.5, unit: "kWh" )
-    state.lastUpdate = "Not updated yet"
-    state.lastQuery = "Not yet queried"
+  state.lastUpdate = "Not updated yet"
+  state.lastQuery = "Not yet queried"
+
+  delayBetween([
+    sendEvent(name: "energy", value: 0.5, unit: "kWh" ),
+    sendEvent(name: "lastQuery", value "Not yet queried...")
+  ])
 
 
 }
