@@ -23,6 +23,7 @@ metadata {
       attribute "lastQuery", "string"
       attribute "power", "number"
       attribute "line1", "string"
+      attribute "line2", "string"
     }
 
     preferences {
@@ -30,15 +31,16 @@ metadata {
           input("site_id", "number", title: "Site Id", description: "Site Id to monitor.", required: true)
           input("api_key", "text", title: "API Bearer Token", description: "Bearer token for given site id. For more information see https://support.tigoenergy.com/hc/en-us/articles/200863027-How-To-use-the-Tigo-Energy-API.", required: true)
           input("url", "text", title: "Tigo Energy Monitor API URL", description: "Endpoint URL for TigoEnergy Monitoring API.", required: true, defaultValue: "https://api2.tigoenergy.com/api/v3")
+          input("start_hour", "number", title: "Start hour", description: "The first hour polling will begin (0-23)", required: true, defaultValue:"6")
+          input("end_hour", "number", title: "End hour", description: "The last hour polling will happen (0-23)", required: true, defaultValue:"20")
 
           input("energy_refresh_interval", "enum", title: "How often to refresh the energy data", defaultValue: 255, options: [
             255:"Do NOT update",
             10:"10 Minutes",
             15:"15 Minutes",
             30:"30 Minutes",
-            45:"45 Minutes",
-            60:"60 Minutes"
-          ], required: false)
+            58:"60 Minutes"
+          ], required: true)
           input(name: "debug", type: "bool", title: "Enable debug logging", defaultValue: false)
         }
     }
@@ -77,7 +79,7 @@ def updated() {
   unschedule(refresh)
   unschedule(queryEnergyEndpoint)
 
-  if( settings.energy_refresh_interval != "255") schedule("0 */${settings.energy_refresh_interval} * ? * * *", queryEnergyEndpoint)
+  if( settings.energy_refresh_interval != "255") schedule("0 */${settings.energy_refresh_interval} ${start_hour}-${end_hour} ? * * *", queryEnergyEndpoint)
 
 state.version = version()
 }
@@ -97,7 +99,8 @@ def clearData()
     sendEvent(name: "lastQuery", value: "Not queried yet."),
     sendEvent(name: "lastUpdate", value: "Not updated yet."),
     sendEvent(name: "power", value: 0.00 ),
-    sendEvent(name: "line1", value: "Not updated yet.")
+    sendEvent(name: "line1", value: "Not updated yet."),
+    sendEvent(name: "line2", value: "Not updated yet.")
   ])
 
 
@@ -138,7 +141,8 @@ def queryEnergyEndpoint() {
             sendEvent(name: "lastUpdate", value: "${summary.updated_on}"),
             sendEvent(name: "lastUpdateTime", value: "${updated_time}"),
             sendEvent(name: "power", value: "${summary.last_power_dc}"),
-            sendEvent(name: "line1", value: "${kwh} kwh\n@ ${updated_time}")
+            sendEvent(name: "line1", value: "${kwh} kwh, ${summary.last_power_dc} watts @ ${updated_time}"),
+            sendEvent(name: "line2", value: "${kwh} kwh @ ${updated_time}")
         ])
 
         if (debug) {log.debug "Events sent"}
