@@ -3,7 +3,7 @@
  *  This is a Hubitat device driver which will connect to the Tigo Energy API and retrieve data.
  *
  ***********************************************************************************************************************/
-private version() { return "1.0.1" }
+private version() { return "1.0.2" }
 
 metadata {
     definition(
@@ -93,6 +93,9 @@ def clearData()
 {
   if (debug)  log.debug "Deleting all metrics." 
     
+  state.arraytest = [ 1, 2, 3, 4, 555, 6, 7, 8, 9, 10, 11, 12 ]
+  // if (debug) log.debug "Array test ${arraytest[5]}"
+    
   // state.remove("line2")
   delayBetween([
     sendEvent(name: "energy", value: 0.00, unit: "kWh" ),
@@ -132,16 +135,26 @@ def queryEnergyEndpoint() {
         }
         def kwh = summary.daily_energy_dc.toFloat() / 10
         kwh = Math.round(kwh) / 100
+        def powerText = "${summary.last_power_dc}"
+        def power2 = powerText.toFloat()
+        if ( power2 < 1000 ) {
+            powerText = "${power2}w"
+        } else {
+            power2 = power2 / 100
+            power2 = Math.round(power2) / 10
+            powerText = "${power2}kw"
+        }
         def updated_time = "${summary.updated_on}"
         updated_time = updated_time.substring(11,16)
-        if (debug) {log.debug("daily_energy_dc = ${summary.daily_energy_dc}, kwh = $kwh, updated_time=${updated_time}" )}
+        if (debug) {log.debug("daily_energy_dc = ${summary.daily_energy_dc}, kwh = $kwh, updated_time=${updated_time}, powerText=${powerText}" )}
         delayBetween([
             sendEvent(name: "energy", value: kwh, unit: "kWh" ),
             sendEvent(name: "lastQuery", value: "${queryDateTime}"),
             sendEvent(name: "lastUpdate", value: "${summary.updated_on}"),
             sendEvent(name: "lastUpdateTime", value: "${updated_time}"),
             sendEvent(name: "power", value: "${summary.last_power_dc}"),
-            sendEvent(name: "line1", value: "${kwh} kwh, ${summary.last_power_dc} watts @ ${updated_time}"),
+            sendEvent(name: "line1", value: "${kwh}kwh, ${powerText} @${updated_time}"),
+            // sendEvent(name: "line1", value: "${kwh}kwh, ${summary.last_power_dc}w @${updated_time}"),
             sendEvent(name: "line2", value: "${kwh} kwh @ ${updated_time}")
         ])
 
