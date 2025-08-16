@@ -32,7 +32,7 @@ void updated() {
 
 void initialize() {
 	Integer interval = (settings?.pollIntervalSeconds as Integer) ?: 30
-	if (interval < 5) interval = 5
+	if (interval < 120) interval = 120
 	scheduleNextPoll(interval)
 	runIn(2, "refresh", [overwrite: true])
 	if (debugLogging) runIn(1800, "logsOff")
@@ -45,7 +45,7 @@ void logsOff() {
 
 private void scheduleNextPoll(Integer seconds = null) {
 	Integer interval = seconds ?: ((settings?.pollIntervalSeconds as Integer) ?: 30)
-	if (interval < 5) interval = 5
+	if (interval < 120) interval = 120
 	runIn(interval, "refresh", [overwrite: true])
 }
 
