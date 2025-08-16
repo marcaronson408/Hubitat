@@ -15,7 +15,7 @@ preferences {
 	input name: "registerAddress", type: "number", title: "Register Address (SoC)", description: "Enter SoC register (commonly 11022 for ET/EH models; adjust as needed)", defaultValue: 11022, required: true
 	input name: "addressIsOneBased", type: "bool", title: "Address is 1-based (Modbus spec style)", defaultValue: true, required: true
 	input name: "scaleDivisor", type: "number", title: "Scale Divisor (e.g., 1 or 10)", defaultValue: 1, required: true
-	input name: "pollIntervalSeconds", type: "number", title: "Poll Interval (seconds)", defaultValue: 30, required: true
+	input name: "pollIntervalSeconds", type: "number", title: "Poll Interval (seconds)", defaultValue: 120, required: true
 	input name: "debugLogging", type: "bool", title: "Enable debug logging", defaultValue: true
 }
 
