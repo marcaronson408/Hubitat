@@ -27,12 +27,14 @@ void installed() {
 void updated() {
 	logInfo "Updated"
 	unschedule()
+	closeSocket()
 	initialize()
 }
 
 void initialize() {
-	Integer interval = (settings?.pollIntervalSeconds as Integer) ?: 30
+	Integer interval = (settings?.pollIntervalSeconds as Integer) ?: 120
 	if (interval < 120) interval = 120
+	connectSocket()
 	scheduleNextPoll(interval)
 	runIn(2, "refresh", [overwrite: true])
 	if (debugLogging) runIn(1800, "logsOff")
@@ -44,7 +46,7 @@ void logsOff() {
 }
 
 private void scheduleNextPoll(Integer seconds = null) {
-	Integer interval = seconds ?: ((settings?.pollIntervalSeconds as Integer) ?: 30)
+	Integer interval = seconds ?: ((settings?.pollIntervalSeconds as Integer) ?: 120)
 	if (interval < 120) interval = 120
 	runIn(interval, "refresh", [overwrite: true])
 }
@@ -58,38 +60,49 @@ void refresh() {
 	try {
 		String requestHex = buildModbusReadRequestHex()
 		if (debugLogging) log.debug "TX: ${requestHex}"
-		hubitat.device.HubAction action = new hubitat.device.HubAction(
-			requestHex,
-			hubitat.device.Protocol.LAN,
-			[
-				type: hubitat.device.HubAction.Type.LAN_TYPE_TCPCLIENT,
-				destinationAddress: "${settings.inverterIp}:${(settings.inverterPort as Integer)}",
-				encoding: hubitat.device.HubAction.Encoding.HEX_STRING,
-				callback: "parse"
-			]
-		)
-		sendHubCommand(action)
+		byte[] data = hubitat.helper.HexUtils.hexStringToByteArray(requestHex)
+		interfaces.rawSocket.sendMessage(data)
 	} catch (Throwable t) {
-		log.error "Failed to send poll: ${t.message}", t
+		log.error "Failed to send poll: ${t?.message}"
 	}
 	scheduleNextPoll()
 }
 
-void parse(String description) {
+def parse(String message) {
 	try {
-		def msg = parseLanMessage(description)
-		String payloadHex = msg?.payload
-		if (!payloadHex && description?.contains("payload:")) {
-			Integer idx = description.indexOf("payload:")
-			payloadHex = description.substring(idx + 8).trim()
-		}
-		if (!payloadHex) {
-			if (debugLogging) log.debug "No payload in parse()"
-			return
-		}
-		byte[] bytes = hubitat.helper.HexUtils.hexStringToByteArray(payloadHex)
-		if (debugLogging) log.debug "RX len=${bytes?.length ?: 0}"
-		Integer soc = extractSocFromResponse(bytes)
+		byte[] payload = message ? message.getBytes('ISO-8859-1') : null
+		if (payload == null || payload.length == 0) return
+		if (debugLogging) log.debug "RX len=${payload.length}"
+		handleModbusResponse(payload)
+	} catch (Throwable t) {
+		log.error "parse() error: ${t?.message}"
+	}
+}
+
+def parse(byte[] payload) {
+	try {
+		if (payload == null || payload.length == 0) return
+		if (debugLogging) log.debug "RX len=${payload.length}"
+		handleModbusResponse(payload)
+	} catch (Throwable t) {
+		log.error "parse() error: ${t?.message}"
+	}
+}
+
+def socketStatus(String status) {
+	if (status?.toLowerCase()?.contains("error")) {
+		log.warn "Socket status: ${status}"
+		reconnectSocketLater()
+	} else if (debugLogging) {
+		log.debug "Socket status: ${status}"
+	}
+}
+
+def parse(String messageType, byte[] payload) {
+	try {
+		if (payload == null || payload.length == 0) return
+		if (debugLogging) log.debug "RX len=${payload.length}"
+		Integer soc = extractSocFromResponse(payload)
 		if (soc != null) {
 			sendEvent(name: "battery", value: soc, unit: "%")
 			sendEvent(name: "stateOfCharge", value: soc, unit: "%")
@@ -98,7 +111,7 @@ void parse(String description) {
 			log.warn "Unable to parse SoC from response"
 		}
 	} catch (Throwable t) {
-		log.error "parse() error: ${t.message}", t
+		log.error "parse() error: ${t?.message}"
 	}
 }
 
@@ -156,4 +169,43 @@ private boolean validatePreferences() {
 private void logInfo(String msg) {
 	if (debugLogging) log.debug msg
 	else log.info msg
+}
+
+private void connectSocket() {
+	try {
+		String host = settings?.inverterIp as String
+		Integer port = (settings?.inverterPort as Integer) ?: 502
+		if (!host || !port) return
+		interfaces.rawSocket.close()
+		interfaces.rawSocket.connect(host, port, byteInterface: true)
+		if (debugLogging) log.debug "Socket connected to ${host}:${port}"
+	} catch (Throwable t) {
+		log.warn "Socket connect failed: ${t?.message}"
+		reconnectSocketLater()
+	}
+}
+
+private void closeSocket() {
+	try {
+		interfaces.rawSocket.close()
+		if (debugLogging) log.debug "Socket closed"
+	} catch (Throwable t) {
+		// ignore
+	}
+}
+
+private void reconnectSocketLater(Integer seconds = 10) {
+	Integer delay = seconds ?: 10
+	runIn(delay, "connectSocket", [overwrite: true])
+}
+
+private void handleModbusResponse(byte[] payload) {
+	Integer soc = extractSocFromResponse(payload)
+	if (soc != null) {
+		sendEvent(name: "battery", value: soc, unit: "%")
+		sendEvent(name: "stateOfCharge", value: soc, unit: "%")
+		logInfo "Battery SoC: ${soc}%"
+	} else {
+		log.warn "Unable to parse SoC from response"
+	}
 }
