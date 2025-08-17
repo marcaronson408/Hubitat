@@ -57,13 +57,21 @@ void refresh() {
 		scheduleNextPoll()
 		return
 	}
+	if (!(state?.socketConnected as Boolean)) {
+		connectSocket()
+		scheduleNextPoll(10)
+		return
+	}
 	try {
 		String requestHex = buildModbusReadRequestHex()
 		if (debugLogging) log.debug "TX: ${requestHex}"
 		byte[] data = hubitat.helper.HexUtils.hexStringToByteArray(requestHex)
-		interfaces.rawSocket.sendMessage(data)
+		String payload = new String(data, 'ISO-8859-1')
+		interfaces.rawSocket.sendMessage(payload)
 	} catch (Throwable t) {
 		log.error "Failed to send poll: ${t?.message}"
+		state.socketConnected = false
+		reconnectSocketLater()
 	}
 	scheduleNextPoll()
 }
@@ -90,7 +98,16 @@ def parse(byte[] payload) {
 }
 
 def socketStatus(String status) {
-	if (status?.toLowerCase()?.contains("error")) {
+	String s = status ?: ""
+	String sl = s.toLowerCase()
+	if (sl.contains("connected")) {
+		state.socketConnected = true
+		if (debugLogging) log.debug "Socket connected"
+	} else if (sl.contains("closed")) {
+		state.socketConnected = false
+		if (debugLogging) log.debug "Socket closed"
+	} else if (sl.contains("error")) {
+		state.socketConnected = false
 		log.warn "Socket status: ${status}"
 		reconnectSocketLater()
 	} else if (debugLogging) {
